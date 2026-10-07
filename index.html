@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stockroom — AI Inventory Control</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg:#e9edf0;--panel:#fff;--ink:#17232d;--mute:#5f6e7a;--line:#d3dae0;--teal:#0e6f68;--red:#b93815;--amber:#b7791f;--blue:#2f5d8a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 'IBM Plex Sans',system-ui,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between;padding:20px 28px;background:var(--ink);color:#fff}
+header h1{margin:0;font-size:20px;font-weight:600}header p{margin:2px 0 0;color:#9fb0bd;font-size:13px}
+button{font:inherit;font-weight:500;border:0;border-radius:6px;padding:9px 16px;cursor:pointer;background:var(--teal);color:#fff}
+button:focus-visible,input:focus-visible{outline:3px solid #7fd1c9;outline-offset:2px}
+button.ghost{background:#fff;color:var(--ink);border:1px solid var(--line);padding:4px 10px;font-size:13px}
+button.no{color:var(--red)}button:disabled{opacity:.6;cursor:wait}
+main{padding:24px 28px;max-width:1280px;margin:auto;display:grid;gap:20px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.kpi b{display:block;font:500 26px 'IBM Plex Mono',monospace}.kpi span{color:var(--mute);font-size:13px}
+.kpi.bad b{color:var(--red)}.kpi.warn b{color:var(--amber)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:20px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px;min-width:0}
+h2{margin:0 0 12px;font-size:16px;font-weight:600}
+.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14px}
+th{text-align:left;color:var(--mute);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:8px;border-bottom:1px solid #edf0f2;vertical-align:top}
+.tag{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:500}
+.critical{background:#fbe3da;color:var(--red)}.shortage,.spike{background:#fbefd3;color:var(--amber)}.overstock{background:#dde9f5;color:var(--blue)}
+.pending{background:#eef1f3;color:var(--mute)}.approved{background:#d9efe9;color:var(--teal)}.rejected{background:#eee;color:#888}
+.why{color:var(--mute);font-size:13px;max-width:480px}.cite{font-size:12px;color:var(--teal)}
+#status{color:#9fb0bd;font-size:13px;min-width:220px}
+.ask{display:flex;gap:8px}.ask input{flex:1;padding:9px 12px;border:1px solid var(--line);border-radius:6px;font:inherit}
+#answer{margin-top:12px;font-size:14px;white-space:pre-wrap}
+canvas{max-height:300px}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Stockroom</h1><p>Inventory risk, supplier reliability and agent recommendations</p></div>
+  <div style="display:flex;gap:14px;align-items:center"><span id="status" role="status"></span><button id="run">Run AI analysis</button></div>
+</header>
+<main>
+  <div class="kpis" id="kpis"></div>
+  <div class="grid">
+    <section><h2>Days of cover vs supplier lead time</h2><canvas id="c1"></canvas></section>
+    <section><h2>Supplier risk score</h2><canvas id="c2"></canvas></section>
+  </div>
+  <section><h2>Agent recommendations</h2><div class="scroll"><table id="recs"></table></div></section>
+  <section><h2>Items needing attention</h2><div class="scroll"><table id="alerts"></table></div></section>
+  <section><h2>Ask the procurement policy</h2>
+    <div class="ask"><input id="q" placeholder="When must a purchase order go to a manager for approval?" aria-label="Policy question"><button id="ask">Ask</button></div>
+    <div id="answer"></div></section>
+</main>
+<script>
+const $=s=>document.querySelector(s);let ch1,ch2;
+const api=async(p,o)=>{const r=await fetch(p,o);if(!r.ok)throw new Error((await r.text())||r.status);return r.json()};
+const esc=s=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const tag=t=>`<span class="tag ${t}">${t}</span>`;
+async function loadKpis(){const s=await api('/dashboard/summary');
+ const k=[['Products',s.products],['Stock value','$'+s.stock_value.toLocaleString()],['Critical',s.critical,'bad'],['Shortage risk',s.shortage,'warn'],
+ ['Overstock',s.overstock,'warn'],['Demand spikes',s.spikes,'warn'],['High-risk suppliers',s.high_risk_suppliers,'bad'],['Pending actions',s.pending_recommendations]];
+ $('#kpis').innerHTML=k.map(([l,v,c])=>`<div class="kpi ${c||''}"><b>${v}</b><span>${l}</span></div>`).join('');
+ const d=s.cover_chart;ch1&&ch1.destroy();
+ ch1=new Chart($('#c1'),{type:'bar',data:{labels:d.map(x=>x.name),datasets:[{label:'Days of cover',data:d.map(x=>x.days_cover),backgroundColor:d.map(x=>x.days_cover<x.lead_time?'#b93815':'#0e6f68')},{type:'line',label:'Lead time',data:d.map(x=>x.lead_time),borderColor:'#17232d',pointRadius:2}]},options:{scales:{x:{ticks:{maxRotation:60,font:{size:10}}}}}});}
+async function loadSuppliers(){const d=await api('/analytics/supplier-risk');ch2&&ch2.destroy();
+ const col={high:'#b93815',medium:'#b7791f',low:'#0e6f68'};
+ ch2=new Chart($('#c2'),{type:'bar',data:{labels:d.map(x=>x.name+' ('+Math.round(x.on_time_rate*100)+'% on time)'),datasets:[{label:'Risk score',data:d.map(x=>x.risk_score),backgroundColor:d.map(x=>col[x.risk_level])}]},options:{indexAxis:'y',plugins:{legend:{display:false}}}});}
+async function loadAlerts(){const [a,b]=await Promise.all([api('/analytics/shortage-risk'),api('/analytics/overstock')]);
+ $('#alerts').innerHTML='<tr><th>SKU</th><th>Product</th><th>Status</th><th>On hand</th><th>Cover (days)</th><th>Lead time</th><th>Supplier</th></tr>'+
+ a.concat(b.slice(0,8)).map(x=>`<tr><td>${x.sku}</td><td>${esc(x.name)}</td><td>${tag(x.status)}</td><td>${x.on_hand}</td><td>${x.days_cover}</td><td>${x.lead_time}</td><td>${esc(x.supplier)}</td></tr>`).join('');}
+async function loadRecs(){const d=await api('/recommendations');
+ $('#recs').innerHTML=d.length?'<tr><th>Item</th><th>Action</th><th>Qty</th><th>Supplier</th><th>Why</th><th>Status</th></tr>'+d.map(r=>`<tr><td>${r.sku}<br>${esc(r.product_name)}<br>${tag(r.severity)}</td><td>${r.action.replaceAll('_',' ')}<br><span class="cite">${Math.round(r.confidence*100)}% confidence</span></td><td>${r.quantity}</td><td>${esc(r.supplier)}</td><td class="why">${esc(r.reason)}<br><span class="cite">Policy: ${esc(r.policy)}</span></td><td>${r.status==='pending'?`<button class="ghost" onclick="decide(${r.id},'approve')">Approve</button> <button class="ghost no" onclick="decide(${r.id},'reject')">Reject</button>`:tag(r.status)}</td></tr>`).join(''):'<tr><td>No recommendations yet. Select “Run AI analysis”.</td></tr>';}
+async function decide(id,d){await api(`/recommendations/${id}/${d}`,{method:'POST'});loadRecs();loadKpis();}
+$('#run').onclick=async()=>{const b=$('#run');b.disabled=true;$('#status').textContent='Starting agents…';
+ try{const {run_id}=await api('/agents/run',{method:'POST'});
+  while(true){await new Promise(r=>setTimeout(r,800));const s=await api('/agents/runs/'+run_id);
+   $('#status').textContent=s.status==='completed'?`Done: ${s.recommendations||0} recommendations${s.llm_used?' (LLM)':''}`:s.status==='failed'?'Failed: '+s.error:'Agent step: '+(s.step||s.status);
+   if(['completed','failed'].includes(s.status))break;}
+  await Promise.all([loadRecs(),loadKpis()]);}catch(e){$('#status').textContent='Error: '+e.message}b.disabled=false;};
+$('#ask').onclick=async()=>{const q=$('#q').value.trim();if(!q)return;$('#answer').textContent='Searching policies…';
+ const r=await api('/rag/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})});
+ $('#answer').innerHTML=esc(r.answer)+'<br><br><span class="cite">Sources: '+r.sources.map(s=>esc(s.source+' / '+s.title)).join('; ')+'</span>';};
+$('#q').addEventListener('keydown',e=>e.key==='Enter'&&$('#ask').click());
+Promise.all([loadKpis(),loadSuppliers(),loadAlerts(),loadRecs()]).catch(e=>$('#status').textContent='Load error: '+e.message);
+</script>
+</body>
+</html>
