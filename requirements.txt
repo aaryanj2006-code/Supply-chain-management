@@ -1,0 +1,15 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.10
+redis==5.2.1
+numpy>=1.26
+scikit-learn>=1.4
+pydantic>=2.7
+langchain-core>=0.3
+langgraph>=0.2.60
+langchain-groq>=0.2
+langchain-openai>=0.2
+langchain-google-genai>=2.0
+httpx
+pytest
