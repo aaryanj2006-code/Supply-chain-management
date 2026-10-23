@@ -321,7 +321,7 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:8000"
+      "value": "https://supply-chain-ai-qzw3.onrender.com"
     },
     {
       "key": "run_id",
