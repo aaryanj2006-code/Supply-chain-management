@@ -2,7 +2,7 @@
 
 Agentic platform that monitors inventory, forecasts demand, scores supplier risk, retrieves procurement policy (RAG) and recommends actions (reorder, expedite, switch supplier, markdown) with human approval.
 
-**Live demo:** _add your Render URL_ · **API docs:** `/docs`
+**Live demo:** [_add your Render URL_](https://supply-chain-ai-qzw3.onrender.com/) · **API docs:** `/docs`
 
 ## Architecture
 ```
