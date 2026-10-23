@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: supply-chain-ai
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase: {name: supply-db, property: connectionString}
+      - key: REDIS_URL
+        fromService: {type: keyvalue, name: supply-redis, property: connectionString}
+      - key: GROQ_API_KEY
+        sync: false
+  - type: keyvalue
+    name: supply-redis
+    plan: free
+    ipAllowList: []
+databases:
+  - name: supply-db
+    plan: free
